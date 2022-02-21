@@ -1,8 +1,7 @@
-const { Constants, Client, DiscordAPIError, Intents, Interaction } = require('discord.js');
+const { Constants, Client, DiscordAPIError, Intents, Interaction, Collection } = require('discord.js');
 const dotenv = require('dotenv');
 dotenv.config();
-
-const got = require('got');
+const fs = require('fs');
 // const prompt = `Artist: Megadeth\n\nLyrics:\n`;
 
 // import  { Configuration, OpenAIApi } from "openai";
@@ -15,122 +14,63 @@ const got = require('got');
 
 
 
-const client = new Client({
+const bot = new Client({
     intents: [
         Intents.FLAGS.GUILDS,
         Intents.FLAGS.GUILD_MESSAGES
     ]
 });
 
-client.on('ready', () => {
-    console.log('Bot Online');
-    
+bot.commands = new Collection();
+
+fs.readdir("./cmds/", (err, files) => {
+    if(err) console.log(err);
+
+    let jsfiles = files.filter(f => f.split(".").pop() === "js");
+    if(jsfiles.length <= 0) {
+        console.log("No commands to load!");
+        return;
+    }
+
+    console.log(`Loading ${jsfiles.length} commands!`);
+
+    jsfiles.forEach((f, i) => {
+        let props = require(`./cmds/${f}`);
+        console.log(`${i + 1}: ${f} loaded!`);
+        bot.commands.set(props.help.name, props);
+    });
+});
+
+bot.on('ready', () => {
+    console.log(`${bot.user.username} is online!`);
+    // console.log(bot.commands);
 
     const guildId = '722611356699852933';
-    const guild = client.guilds.cache.get(guildId);
-    let commands;
+    const guild = bot.guilds.cache.get(guildId);
+    let cmdChannel;
 
     if (guild)
-        commands = guild.commands
+        cmdChannel = guild.commands
     else
-        commands = client.application?.commands
+        cmdChannel = bot.application?.commands
 
-
-    commands?.create({
-        name: 'ping',
-        description: 'Replies With Pong'
-    });
-
-    commands?.create({
-        name: 'add',
-        description: 'Adds two numbers',
-        options: [
-            {
-               name: 'num1',
-               description: 'first number',
-               required: true,
-               type: Constants.ApplicationCommandOptionTypes.NUMBER,
-            },
-            {
-                name: 'num2',
-                description: 'first number',
-                required: true,
-                type: Constants.ApplicationCommandOptionTypes.NUMBER,
-            }
-        ]
-    });
-
-    commands?.create({
-        name: 'ai',
-        description: 'uses ai to generate lyrics',
-        options: [
-            {
-               name: 'artist',
-               description: 'band or artist',
-               required: true,
-               type: Constants.ApplicationCommandOptionTypes.STRING,
-            }
-        ]
+    bot.commands.forEach(cmd => {
+        cmdChannel?.create({
+            name: cmd.help.name,
+            description: cmd.help.description,
+            options: cmd.help.options
+        });
     });
 
 });
 
-client.on('interactionCreate', async (interaction) => {
+bot.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options } = interaction;
 
-    switch (commandName) {
-        case 'ping':
-            interaction.reply({
-                content: 'pong',
-                ephemeral: true
-            })
-            break;
-        case 'add':
-            const num1 = options.getNumber('num1');
-            const num2 = options.getNumber('num2');
-
-            await interaction.deferReply({
-                ephemeral: true
-            })
-
-            // simulate 5 second delay
-            // await new Promise(resolve => setTimeout(resolve, 5000));
-
-            await interaction.editReply({
-                content: `Sum: ${num1+num2}`,
-            });
-            break;
-        case 'ai':
-            const prompt = `Artist: ${options.getString('artist')}\n\nLyrics:\n`;
-            console.log(prompt);
-            await interaction.deferReply();
-
-            (async () => {
-                const url = 'https://api.openai.com/v1/engines/davinci/completions';
-                const params = {
-                    "prompt": prompt,
-                    "max_tokens": 160,
-                    "temperature": 0.7,
-                    "frequency_penalty": 0.7
-                };
-                const headers = {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                };
-                
-                try {
-                    const response = await got.post(url, { json: params, headers: headers }).json();
-                    output = `${prompt}${response.choices[0].text}`;
-                    await interaction.editReply({
-                        content: `${output}`,
-                    });
-                } catch (err) {
-                    console.log(err);
-                }
-            })();
-            break;
-    }
+    let command = bot.commands.get(commandName);
+    if(command) command.run(bot, interaction);
 })
 
-client.login(process.env.TOKEN);
+bot.login(process.env.TOKEN);
