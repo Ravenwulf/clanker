@@ -33,7 +33,7 @@ module.exports.run = async (bot, interaction) => {
 }
 
 module.exports.help = {
-    name: 'ai',
+    name: 'lyrics',
     description: 'uses ai to generate lyrics',
     options: [
         {
